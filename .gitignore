@@ -2,3 +2,6 @@
 *.npy
 .DS_Store
 *.zip
+
+data/
+logs/

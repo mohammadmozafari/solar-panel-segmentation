@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 from typing import List, Tuple
@@ -44,6 +45,23 @@ def make_masks(
     datasets.
     """
     mask = np.random.rand(dataset_length)
+    train_mask = mask < (1 - (val_size + test_size))
+    val_mask = (mask >= (1 - (val_size + test_size))) & (mask < 1 - test_size)
+    test_mask = mask >= (1 - test_size)
+
+    return train_mask, val_mask, test_mask
+
+def make_masks_torch(
+    dataset_length: int,
+    val_size: float = 0.1,
+    test_size: float = 0.1
+    ) -> Tuple[List[bool], List[bool], List[bool]]:
+    """Returns three boolean arrays of length `dataset_length`,
+    representing the train set, validation set and test set. These
+    arrays can be passed to `Dataset.add_mask` to yield the appropriate
+    datasets.
+    """
+    mask = torch.rand(dataset_length)
     train_mask = mask < (1 - (val_size + test_size))
     val_mask = (mask >= (1 - (val_size + test_size))) & (mask < 1 - test_size)
     test_mask = mask >= (1 - test_size)

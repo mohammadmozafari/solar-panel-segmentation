@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 from torch.optim.optimizer import Optimizer
 from tqdm import tqdm
 import numpy as np
-from sklearn.metrics import roc_auc_score
+from pathlib import Path
+from sklearn.metrics import roc_auc_score, classification_report
 
 from typing import Any, List, Tuple
 
@@ -14,7 +15,8 @@ def train_classifier(model: torch.nn.Module,
                      val_dataloader: DataLoader,
                      warmup: int = 2,
                      patience: int = 5,
-                     max_epochs: int = 100) -> None:
+                     max_epochs: int = 100,
+                     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')) -> None:
     """Train the classifier
 
     Parameters
@@ -50,7 +52,11 @@ def train_classifier(model: torch.nn.Module,
             optimizer = torch.optim.Adam(model.parameters())
 
         train_data, val_data = _train_classifier_epoch(model, optimizer, train_dataloader,
-                                                       val_dataloader)
+                                                       val_dataloader, device)
+        savedir = Path('./data/checkpoints')
+        if not savedir.exists(): savedir.mkdir()
+        torch.save(model.state_dict(), savedir / f'e{i}.model')
+        
         if val_data[1] > best_val_auc_roc:
             best_val_auc_roc = val_data[1]
             patience_counter = 0
@@ -61,7 +67,6 @@ def train_classifier(model: torch.nn.Module,
                 print("Early stopping!")
                 model.load_state_dict(best_state_dict)
                 return None
-
 
 def train_segmenter(model: torch.nn.Module,
                     train_dataloader: DataLoader,
@@ -118,7 +123,8 @@ def train_segmenter(model: torch.nn.Module,
 def _train_classifier_epoch(model: torch.nn.Module,
                             optimizer: Optimizer,
                             train_dataloader: DataLoader,
-                            val_dataloader: DataLoader
+                            val_dataloader: DataLoader,
+                            device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
                             ) -> Tuple[Tuple[List[Any], float],
                                        Tuple[List[Any], float]]:
 
@@ -126,6 +132,9 @@ def _train_classifier_epoch(model: torch.nn.Module,
     v_losses, v_true, v_pred = [], [], []
     model.train()
     for x, y in tqdm(train_dataloader):
+        x = x.to(device)
+        y = y.to(device)
+        
         optimizer.zero_grad()
         preds = model(x)
 
@@ -140,6 +149,9 @@ def _train_classifier_epoch(model: torch.nn.Module,
     with torch.no_grad():
         model.eval()
         for val_x, val_y in tqdm(val_dataloader):
+            val_x = val_x.to(device)
+            val_y = val_y.to(device)
+            
             val_preds = model(val_x)
             val_loss = F.binary_cross_entropy(val_preds.squeeze(1), val_y)
             v_losses.append(val_loss.item())
@@ -149,7 +161,10 @@ def _train_classifier_epoch(model: torch.nn.Module,
 
     train_auc = roc_auc_score(np.concatenate(t_true), np.concatenate(t_pred))
     val_auc = roc_auc_score(np.concatenate(v_true), np.concatenate(v_pred))
-
+    
+    gt = np.concatenate(v_true)
+    pd = (np.concatenate(v_pred) > 0.5) * 1
+    print(classification_report(gt, pd, target_names=['empty', 'solar']))
     print(f'Train loss: {np.mean(t_losses)}, Train AUC ROC: {train_auc}, '
           f'Val loss: {np.mean(v_losses)}, Val AUC ROC: {val_auc}')
     return (t_losses, train_auc), (v_losses, val_auc)

@@ -6,7 +6,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from solarnet.preprocessing import MaskMaker, ImageSplitter
-from solarnet.datasets import ClassifierDataset, SegmenterDataset, make_masks
+from solarnet.datasets import ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset, make_masks, make_masks_torch
 from solarnet.models import Classifier, Segmenter, train_classifier, train_segmenter
 
 
@@ -76,24 +76,23 @@ class RunTask:
         if device.type != 'cpu': model = model.cuda()
 
         processed_folder = data_folder / 'processed'
-        dataset = ClassifierDataset(processed_folder=processed_folder)
+        # dataset = ClassifierDataset(processed_folder=processed_folder)
+        dataset = ClassifierRandomLocationDataset()
 
         # make a train and val set
-        train_mask, val_mask, test_mask = make_masks(len(dataset), val_size, test_size)
+        train_mask, val_mask, test_mask = make_masks(len(dataset.city_name), 0.15, 0.05)
 
         dataset.add_mask(train_mask)
-        train_dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
-        val_dataloader = DataLoader(ClassifierDataset(mask=val_mask,
-                                                      processed_folder=processed_folder,
-                                                      transform_images=False),
-                                    batch_size=64, shuffle=True)
-        test_dataloader = DataLoader(ClassifierDataset(mask=test_mask,
-                                                       processed_folder=processed_folder,
-                                                       transform_images=False),
-                                     batch_size=64)
+        train_dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
+        val_dataloader = DataLoader(ClassifierRandomLocationDataset(mask=val_mask,
+                                                                    transform_images=False),
+                                                                    batch_size=64, shuffle=True, num_workers=8)
+        test_dataloader = DataLoader(ClassifierRandomLocationDataset(mask=test_mask,
+                                                                    transform_images=False),
+                                                                    batch_size=64, shuffle=True, num_workers=8)
 
         train_classifier(model, train_dataloader, val_dataloader, max_epochs=max_epochs,
-                         warmup=warmup, patience=patience)
+                         warmup=warmup, patience=patience, device=device)
 
         savedir = data_folder / 'models'
         if not savedir.exists(): savedir.mkdir()
@@ -104,6 +103,8 @@ class RunTask:
         preds, true = [], []
         with torch.no_grad():
             for test_x, test_y in tqdm(test_dataloader):
+                test_x = test_x.to(device)
+                test_y = test_y.to(device)
                 test_preds = model(test_x)
                 preds.append(test_preds.squeeze(1).cpu().numpy())
                 true.append(test_y.cpu().numpy())
