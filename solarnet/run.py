@@ -1,14 +1,28 @@
 import torch
 from torch.utils.data import DataLoader
 
+import os
+import sys
 import numpy as np
-from pathlib import Path
 from tqdm import tqdm
+from pathlib import Path
 
 from solarnet.preprocessing import MaskMaker, ImageSplitter
 from solarnet.datasets import ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset, make_masks, make_masks_torch
 from solarnet.models import Classifier, Segmenter, train_classifier, train_segmenter
 
+def init_exp(exp_dir):
+    # instance directory
+    instances = [int(x) for x in next(os.walk(exp_dir))[1]]
+    if len(instances) == 0:
+        instance_id = 1
+    else:
+        instance_id = max(instances) + 1
+    instance_dir = exp_dir / f'{instance_id}'
+    checkpoints_dir = instance_dir / 'checkpoints'
+    if not instance_dir.exists(): instance_dir.mkdir()
+    if not checkpoints_dir.exists(): checkpoints_dir.mkdir()
+    return instance_dir
 
 class RunTask:
 
@@ -48,7 +62,8 @@ class RunTask:
     @staticmethod
     def train_classifier(max_epochs=100, warmup=2, patience=5, val_size=0.1,
                          test_size=0.1, data_folder='data',
-                         device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')):
+                         device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                         exp_dir=None):
         """Train the classifier
 
         Parameters
@@ -71,6 +86,7 @@ class RunTask:
             The device to train the models on
         """
         data_folder = Path(data_folder)
+        instance_dir = init_exp(Path(exp_dir))
 
         model = Classifier()
         if device.type != 'cpu': model = model.cuda()
@@ -92,11 +108,11 @@ class RunTask:
                                                                     batch_size=64, shuffle=True, num_workers=8)
 
         train_classifier(model, train_dataloader, val_dataloader, max_epochs=max_epochs,
-                         warmup=warmup, patience=patience, device=device)
+                         warmup=warmup, patience=patience, device=device, instance_dir=instance_dir)
 
-        savedir = data_folder / 'models'
+        savedir = instance_dir / 'final'
         if not savedir.exists(): savedir.mkdir()
-        torch.save(model.state_dict(), savedir / 'classifier.model')
+        torch.save(model.state_dict(), savedir / 'classifier.pth')
 
         # save predictions for analysis
         print("Generating test results")

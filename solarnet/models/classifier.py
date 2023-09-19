@@ -15,13 +15,22 @@ class Classifier(ResnetBase):
     def __init__(self, imagenet_base: bool = True) -> None:
         super().__init__(imagenet_base=imagenet_base)
 
-        self.avgpool = nn.AvgPool2d(7, stride=1)
+        # resnet34
+        # self.avgpool = nn.AvgPool2d(7, stride=1)
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(512, 1),
+        #     nn.Sigmoid()
+        # )
+        
+        # resnet50
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
-            nn.Linear(512, 1),
+            nn.Linear(2048, 1),
             nn.Sigmoid()
         )
 
     def forward(self, x):
         x = self.pretrained(x)
         x = self.avgpool(x)
-        return self.classifier(x.view(x.size(0), -1))
+        x = self.classifier(x.view(x.size(0), -1))
+        return x

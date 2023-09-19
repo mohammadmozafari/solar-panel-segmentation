@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torchvision.models import resnet34
+from torchvision.models import resnet34, resnet50
 
 
 class ResnetBase(nn.Module):
@@ -14,7 +14,12 @@ class ResnetBase(nn.Module):
     def __init__(self, imagenet_base: bool = True) -> None:
         super().__init__()
 
-        resnet = resnet34(pretrained=imagenet_base).float()
+        # resnet = resnet34(pretrained=imagenet_base).float()
+        resnet = resnet50(pretrained=imagenet_base).float()
+
+        # resnet 50
+        # resnet 100
+        # vision transformer
         self.pretrained = nn.Sequential(*list(resnet.children())[:-2])
 
     def forward(self, x):

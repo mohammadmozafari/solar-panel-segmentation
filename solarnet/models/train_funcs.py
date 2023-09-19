@@ -16,7 +16,8 @@ def train_classifier(model: torch.nn.Module,
                      warmup: int = 2,
                      patience: int = 5,
                      max_epochs: int = 100,
-                     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')) -> None:
+                     device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                     instance_dir=None) -> None:
     """Train the classifier
 
     Parameters
@@ -53,7 +54,7 @@ def train_classifier(model: torch.nn.Module,
 
         train_data, val_data = _train_classifier_epoch(model, optimizer, train_dataloader,
                                                        val_dataloader, device)
-        savedir = Path('./data/checkpoints')
+        savedir = instance_dir / 'checkpoints'
         if not savedir.exists(): savedir.mkdir()
         torch.save(model.state_dict(), savedir / f'e{i}.model')
         
