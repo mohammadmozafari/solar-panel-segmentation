@@ -1,4 +1,4 @@
-EXP_NAME="resnet50"
+EXP_NAME="dino"
 EXP_DIR="./exps/${EXP_NAME}"
 mkdir -p $EXP_DIR
 

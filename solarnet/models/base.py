@@ -1,6 +1,7 @@
 import torch
 from torch import nn
-from torchvision.models import resnet34, resnet50
+from torchvision.models import resnet34, resnet50, resnet101
+from torchvision.models import swin_v2_t
 
 
 class ResnetBase(nn.Module):
@@ -14,13 +15,16 @@ class ResnetBase(nn.Module):
     def __init__(self, imagenet_base: bool = True) -> None:
         super().__init__()
 
-        # resnet = resnet34(pretrained=imagenet_base).float()
-        resnet = resnet50(pretrained=imagenet_base).float()
-
-        # resnet 50
+        # resnet 34, 50, 101
         # resnet 100
-        # vision transformer
-        self.pretrained = nn.Sequential(*list(resnet.children())[:-2])
+        # base = resnet34(pretrained=imagenet_base).float()
+        # resnet = resnet50(pretrained=imagenet_base).float()
+        # resnet = resnet101(pretrained=imagenet_base).float()
+        # self.pretrained = nn.Sequential(*list(base.children())[:-2])
+        
+        # vision transformers
+        base = swin_v2_t(pretrained=imagenet_base).float()
+        self.pretrained = nn.Sequential(*list(base.children())[:-3])
 
     def forward(self, x):
         # Since this is just a base, forward() shouldn't directly

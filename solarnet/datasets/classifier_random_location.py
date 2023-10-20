@@ -4,7 +4,9 @@ import rasterio
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import matplotlib.pyplot as plt
 from collections import defaultdict
+from torchvision.transforms import v2, GaussianBlur
 
 from typing import Optional, List, Tuple
 
@@ -30,6 +32,7 @@ class ClassifierRandomLocationDataset:
         self.transform_images = transform_images
         self.data_folder = data_folder
         
+        self.counter = 0
         self.output_dict = self.read_centroids()
         self.city_name = []
         self.city_name_loc = []
@@ -70,15 +73,42 @@ class ClassifierRandomLocationDataset:
     def __len__(self) -> int:
         return 2 * len(self.city_name_loc)
 
+    # def _transform_images(self, image: np.ndarray) -> np.ndarray:
+    #     transforms = [
+    #         no_change,
+    #         horizontal_flip,
+    #         vertical_flip,
+    #         colour_jitter,
+    #     ]
+    #     chosen_function = random.choice(transforms)
+    #     return chosen_function(image)
+    
     def _transform_images(self, image: np.ndarray) -> np.ndarray:
-        transforms = [
-            no_change,
-            horizontal_flip,
-            vertical_flip,
-            colour_jitter,
-        ]
-        chosen_function = random.choice(transforms)
-        return chosen_function(image)
+        
+        jitter = v2.ColorJitter(brightness=.5, contrast=0.5, saturation=0.5, hue=.3)
+        g_blur = GaussianBlur(kernel_size=3, sigma=0.5)
+        tens = torch.from_numpy(image)
+
+        # adding jitter
+        if torch.rand((1, )) > 0.5:
+            tens = jitter(tens)
+
+        # adding guassian blur
+        if torch.rand((1, )) > 0.5:
+            tens = g_blur(tens)
+
+        npy = tens.numpy()
+        
+        # fig, axes = plt.subplots(1, 2)
+        # axes[0].imshow(image.transpose((1, 2, 0)))
+        # axes[1].imshow(npy.transpose((1, 2, 0)))
+        # axes[0].axis('off')
+        # axes[1].axis('off')
+        # plt.savefig(f'tmp_plots/{self.counter}.png')
+        # plt.close()
+        # self.counter += 1
+        
+        return npy
 
     # todo: optimize this function
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:

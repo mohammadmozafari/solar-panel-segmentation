@@ -9,7 +9,7 @@ from pathlib import Path
 
 from solarnet.preprocessing import MaskMaker, ImageSplitter
 from solarnet.datasets import ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset, make_masks, make_masks_torch
-from solarnet.models import Classifier, Segmenter, train_classifier, train_segmenter
+from solarnet.models import Classifier, Segmenter, train_classifier, train_dino_classifier, train_segmenter, DinoClassifier
 
 def init_exp(exp_dir):
     # instance directory
@@ -88,12 +88,19 @@ class RunTask:
         data_folder = Path(data_folder)
         instance_dir = init_exp(Path(exp_dir))
 
-        model = Classifier()
+        model = DinoClassifier()
+        for name, p in model.named_parameters():
+            if 'linear_head' not in name:
+                p.requires_grad = False 
+        # for name, p in model.named_parameters():
+        #     print(name, p.shape, p.requires_grad)
+
         if device.type != 'cpu': model = model.cuda()
 
         processed_folder = data_folder / 'processed'
         # dataset = ClassifierDataset(processed_folder=processed_folder)
-        dataset = ClassifierRandomLocationDataset()
+        # dataset = ClassifierRandomLocationDataset()
+        dataset = ClassifierRandomLocationDataset(transform_images=True)
 
         # make a train and val set
         train_mask, val_mask, test_mask = make_masks(len(dataset.city_name), 0.15, 0.05)
@@ -107,7 +114,7 @@ class RunTask:
                                                                     transform_images=False),
                                                                     batch_size=64, shuffle=True, num_workers=8)
 
-        train_classifier(model, train_dataloader, val_dataloader, max_epochs=max_epochs,
+        train_dino_classifier(model, train_dataloader, val_dataloader, max_epochs=max_epochs,
                          warmup=warmup, patience=patience, device=device, instance_dir=instance_dir)
 
         savedir = instance_dir / 'final'
