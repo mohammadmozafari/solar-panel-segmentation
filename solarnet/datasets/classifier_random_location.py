@@ -124,8 +124,8 @@ class ClassifierRandomLocationDataset:
             w_begin = torch.randint(max(0, center_w-224), min(IMAGE_SIZES[item[0]][1]-224, center_w), (1,))
             x = org_file[:, h_begin:h_begin+224, w_begin:w_begin+224]
             if self.transform_images: x = self._transform_images(x)
-            if self.normalize: x = normalize(x)
-            return torch.as_tensor(x.copy()).float(), torch.tensor(1.0)
+            if self.normalize: x = normalize(x, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
+            return torch.as_tensor(x.copy()).float(), torch.tensor(1.0).long()
                      
         else:
             # empty
@@ -145,5 +145,5 @@ class ClassifierRandomLocationDataset:
                 if brk: break
             x = org_file[:, rand_h-112:rand_h+112, rand_w-112:rand_w+112]
             if self.transform_images: x = self._transform_images(x)
-            if self.normalize: x = normalize(x)
-            return torch.as_tensor(x.copy()).float(), torch.tensor(0.0)
+            if self.normalize: x = normalize(x, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
+            return torch.as_tensor(x.copy()).float(), torch.tensor(0.0).long()

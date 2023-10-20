@@ -9,8 +9,8 @@ from sklearn.metrics import roc_auc_score, classification_report, confusion_matr
 import matplotlib.pyplot as plt
 from solarnet.datasets import denormalize
 import cv2
-
 from typing import Any, List, Tuple
+from solarnet.datasets import TestDataset
 
 def train_dino_classifier(model: torch.nn.Module,
                      train_dataloader: DataLoader,
@@ -19,7 +19,8 @@ def train_dino_classifier(model: torch.nn.Module,
                      patience: int = 5,
                      max_epochs: int = 100,
                      device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-                     instance_dir=None) -> None:
+                     instance_dir=None,
+                     writer=None) -> None:
     """Train the classifier
 
     Parameters
@@ -45,17 +46,21 @@ def train_dino_classifier(model: torch.nn.Module,
     best_state_dict = model.state_dict()
     best_val_auc_roc = 0.5
     patience_counter = 0
-    lr = 1e-5
+    
+    lr = 1e-3
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, min_lr=1e-7)
+    # lr = 1e-5
     # lr = 1e-6
     
-    for i in range(max_epochs):
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    iteration = [0]
+    for epoch in range(max_epochs):
 
         train_data, val_data = _train_classifier_epoch(model, optimizer, train_dataloader,
-                                                       val_dataloader, device)
+                                                       val_dataloader, device, epoch, iteration, writer=writer, lr_scheduler=lr_scheduler)
         savedir = instance_dir / 'checkpoints'
         if not savedir.exists(): savedir.mkdir()
-        torch.save(model.state_dict(), savedir / f'e{i}.model')
+        torch.save(model.state_dict(), savedir / f'e{epoch}.model')
         
         if val_data[1] > best_val_auc_roc:
             best_val_auc_roc = val_data[1]
@@ -186,30 +191,43 @@ def _train_classifier_epoch(model: torch.nn.Module,
                             optimizer: Optimizer,
                             train_dataloader: DataLoader,
                             val_dataloader: DataLoader,
-                            device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+                            device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                            epoch=None, iteration=None, writer=None, lr_scheduler=None
                             ) -> Tuple[Tuple[List[Any], float],
                                        Tuple[List[Any], float]]:
 
     t_losses, t_true, t_pred = [], [], []
     v_losses, v_true, v_pred = [], [], []
-    model.train()
-    # model.load_state_dict(torch.load('exps/swin_v2_t/1/final/classifier.pth'))
     
-    for x, y in tqdm(train_dataloader):
+    model.train()
+    running_losses = []
+    
+    for x, y in train_dataloader:
         
         x = x.to(device)
         y = y.to(device)
         
         optimizer.zero_grad()        
-        preds = model(x)
+        logits = model(x)
 
-        loss = F.binary_cross_entropy(preds.squeeze(1), y)
+        loss = F.cross_entropy(logits, y)
         loss.backward()
         optimizer.step()
         t_losses.append(loss.item())
+        running_losses.append(loss.item())
 
-        t_true.append(y.cpu().detach().numpy())
-        t_pred.append(preds.squeeze(1).cpu().detach().numpy())
+        pred = F.softmax(logits, -1)[:, 1]
+        t_true.append(y.detach().cpu().numpy())
+        t_pred.append(pred.detach().cpu().numpy())
+        
+        if (iteration[0] + 1) % 10 == 0:
+             t_loss = sum(running_losses) / len(running_losses)
+             running_losses = []
+             print(f'[{epoch}, {iteration[0]}] -- Loss: {t_loss}')
+             writer.add_scalar('HighFreqLoss', t_loss, iteration[0])
+             lr_scheduler.step(t_loss)
+        
+        iteration[0] += 1
 
     with torch.no_grad():
         model.eval()
@@ -218,10 +236,11 @@ def _train_classifier_epoch(model: torch.nn.Module,
             val_x = val_x.to(device)
             val_y = val_y.to(device)
             
-            val_preds = model(val_x)
-            val_loss = F.binary_cross_entropy(val_preds.squeeze(1), val_y)
+            val_logits = model(val_x)
+            val_loss = F.cross_entropy(val_logits, val_y)
             v_losses.append(val_loss.item())
 
+            val_preds = F.softmax(val_logits, -1)[:, 1]
             for i in range(val_x.shape[0]):
                 
                 image = val_x[i, :, :, :].cpu()
@@ -231,8 +250,8 @@ def _train_classifier_epoch(model: torch.nn.Module,
                 cv2.imwrite(str(img_name), image[:, :, ::-1])
                 num += 1
 
-            v_true.append(val_y.cpu().detach().numpy())
-            v_pred.append(val_preds.squeeze(1).cpu().detach().numpy())
+            v_true.append(val_y.detach().cpu().numpy())
+            v_pred.append(val_preds.detach().cpu().numpy())
     
     v_true = np.concatenate(v_true)
     v_pred = np.concatenate(v_pred)
@@ -253,9 +272,24 @@ def _train_classifier_epoch(model: torch.nn.Module,
     
     print(f'Train loss: {np.mean(t_losses)}, Train AUC ROC: {train_auc}, '
           f'Val loss: {np.mean(v_losses)}, Val AUC ROC: {val_auc}')
+    
+    writer.add_scalar('Loss/Train', np.mean(t_losses), epoch)
+    writer.add_scalar('Loss/Validation', np.mean(v_losses), epoch)
+    writer.add_scalar('AUC/Train', train_auc, epoch)
+    writer.add_scalar('AUC/Validation', val_auc, epoch)
+    
+    print(f'Evaluate on london validation set with thresh 0.50 ...')
+    prec, rec, f1, acc = evaluate_on_london(model, device, 0.5)
+    
+    print(f'Evaluate on london validation set with thresh {best_threshold:.2f} ...')
+    prec, rec, f1, acc = evaluate_on_london(model, device, best_threshold)
+
+    writer.add_scalar('LondonTestSet/Precision', prec, epoch)
+    writer.add_scalar('LondonTestSet/Recall', rec, epoch)
+    writer.add_scalar('LondonTestSet/F1', f1, epoch)
+    writer.add_scalar('LondonTestSet/Accuracy', acc, epoch)
 
     return (t_losses, train_auc), (v_losses, val_auc)
-
 
 def _train_segmenter_epoch(model: torch.nn.Module,
                            optimizer: Optimizer,
@@ -283,3 +317,52 @@ def _train_segmenter_epoch(model: torch.nn.Module,
     print(f'Train loss: {np.mean(t_losses)}, Val loss: {np.mean(v_losses)}')
 
     return t_losses, v_losses
+
+def evaluate_on_london(model, device, thresh):
+
+    classifier = model
+
+    # When we have a group of 224x224 images            
+    save_path = Path('data/test_manually_labeled_output')
+    if not save_path.exists(): save_path.mkdir()
+    ds = TestDataset('data/test_manually_labeled_input', MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
+    dl = DataLoader(ds, batch_size=1, shuffle=False)
+    classifier.eval()
+    tp, tn, fp, fn = 0, 0, 0, 0
+    with torch.no_grad():
+        for i, x in enumerate(dl):
+            names = x[0]
+            images = x[1].to(device)
+            label = x[2].to(device)
+            logit = classifier(images)
+            pred = F.softmax(logit, -1)[:, 1]
+            # print(names, "pred:", pred, "|", "label:", label)
+            original_image = denormalize(images.cpu().numpy())
+            pos_neg = f'{"P" if pred > thresh else "N"}'
+            suffix = f'{pos_neg+"P" if label > 0.5 else pos_neg+"N"}'
+            if pred > 0.5 and label == 1: tp += 1
+            elif pred > 0.5 and label == 0: fp += 1
+            elif pred < 0.5 and label == 1: fn += 1
+            else: tn += 1
+            img_name = save_path / f'{names[0].split("/")[-1].split(".")[0]}-{suffix}.png'
+            original_image = original_image[0, :, :, :].transpose((1, 2, 0))
+            # cv2.imwrite(str(img_name), original_image[:, :, ::-1])
+
+        # Precision attempts to answer the following question:
+        # What proportion of positive identifications was actually correct?
+        precision = np.NAN if tp + fp == 0 else tp/(tp+fp)
+        print("Precision:", precision)
+
+        # Recall attempts to answer the following question:
+        # What proportion of actual positives was identified correctly?
+        recall = np.NAN if tp + fn == 0 else tp/(tp+fn)
+        print("Recall:", recall)
+
+        # F1-score: a combo of precision and recall
+        f1 = np.NAN if 2*tp + fp + fn == 0 else 2*tp/(2*tp + fp + fn)
+        print("F1-score:",f1)
+        
+        accuracy = np.NAN if tp+fp+tn+fn == 0 else (tp+tn)/(tp+fp+tn+fn)
+        print("Accuracy:",accuracy)
+        
+    return precision, recall, f1, accuracy

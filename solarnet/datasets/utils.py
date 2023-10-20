@@ -3,10 +3,8 @@ import numpy as np
 
 from typing import List, Tuple
 
-MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 
-
-def normalize(image: np.ndarray) -> np.ndarray:
+def normalize(image: np.ndarray, MEAN = [0.485, 0.456, 0.406], STD = [0.485, 0.456, 0.406]) -> np.ndarray:
     """Normalized an image (or a set of images), as per
     https://pytorch.org/docs/1.0.0/torchvision/models.html
 
@@ -23,7 +21,7 @@ def normalize(image: np.ndarray) -> np.ndarray:
     return np.moveaxis((np.moveaxis(image, source, dest) - MEAN) / STD, dest, source)
 
 
-def denormalize(image: np.ndarray) -> np.ndarray:
+def denormalize(image: np.ndarray, MEAN = [0.485, 0.456, 0.406], STD = [0.485, 0.456, 0.406]) -> np.ndarray:
     """Reverses what normalize does
     """
     # determine if we are dealing with a single image, or a

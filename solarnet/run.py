@@ -6,6 +6,7 @@ import sys
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+from torch.utils.tensorboard import SummaryWriter
 
 from solarnet.preprocessing import MaskMaker, ImageSplitter
 from solarnet.datasets import ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset, make_masks, make_masks_torch
@@ -61,7 +62,7 @@ class RunTask:
 
     @staticmethod
     def train_classifier(max_epochs=100, warmup=2, patience=5, val_size=0.1,
-                         test_size=0.1, data_folder='data',
+                         test_size=0.1, data_folder='data', mode='small',
                          device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
                          exp_dir=None):
         """Train the classifier
@@ -87,8 +88,10 @@ class RunTask:
         """
         data_folder = Path(data_folder)
         instance_dir = init_exp(Path(exp_dir))
+        writer = SummaryWriter()
 
-        model = DinoClassifier()
+        # model = DinoClassifier(mode=mode)
+        model = DinoClassifier(mode='base', layers=1)
         for name, p in model.named_parameters():
             if 'linear_head' not in name:
                 p.requires_grad = False 
@@ -98,9 +101,7 @@ class RunTask:
         if device.type != 'cpu': model = model.cuda()
 
         processed_folder = data_folder / 'processed'
-        # dataset = ClassifierDataset(processed_folder=processed_folder)
-        # dataset = ClassifierRandomLocationDataset()
-        dataset = ClassifierRandomLocationDataset(transform_images=True)
+        dataset = ClassifierRandomLocationDataset(transform_images=False)
 
         # make a train and val set
         train_mask, val_mask, test_mask = make_masks(len(dataset.city_name), 0.15, 0.05)
@@ -115,7 +116,7 @@ class RunTask:
                                                                     batch_size=64, shuffle=True, num_workers=8)
 
         train_dino_classifier(model, train_dataloader, val_dataloader, max_epochs=max_epochs,
-                         warmup=warmup, patience=patience, device=device, instance_dir=instance_dir)
+                         warmup=warmup, patience=patience, device=device, instance_dir=instance_dir, writer=writer)
 
         savedir = instance_dir / 'final'
         if not savedir.exists(): savedir.mkdir()
