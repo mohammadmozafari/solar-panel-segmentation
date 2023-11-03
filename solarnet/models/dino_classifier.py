@@ -23,17 +23,35 @@ import torch.nn.functional as F
 
 class DinoClassifier(nn.Module):
 
-    def __init__(self, layers=1, mode='small') -> None:
+    def __init__(self, layers=1, mode='small', stacked_layers=1) -> None:
         super().__init__()
         
         self.layers = layers
+        self.stacked_layers = stacked_layers
+        
         if mode == 'small':
             self.dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-            self.linear_head = nn.Linear((1 + layers) * 384, 2)
+            if stacked_layers == 1:
+                self.linear_head = nn.Linear((1 + layers) * 384, 2)
+            elif stacked_layers == 2:
+                self.linear_head = nn.Linear((1 + layers) * 384, 100)
+                self.linear_head2 = nn.Linear(100, 2)
         
         elif mode == 'base':
             self.dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-            self.linear_head = nn.Linear((1 + layers) * 768, 2)
+            if stacked_layers == 1:
+                self.linear_head = nn.Linear((1 + layers) * 768, 2)
+            elif stacked_layers == 2:
+                self.linear_head = nn.Linear((1 + layers) * 768, 200)
+                self.linear_head2 = nn.Linear(200, 2)
+            
+        elif mode == 'giant':
+            self.dinov2 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
+            if stacked_layers == 1:
+                self.linear_head = nn.Linear((1 + layers) * 1536, 2)
+            elif stacked_layers == 2:
+                self.linear_head = nn.Linear((1 + layers) * 1536, 300)
+                self.linear_head2 = nn.Linear(300, 2)
 
     def forward(self, x):
         
@@ -60,4 +78,8 @@ class DinoClassifier(nn.Module):
             # fmt: on
         else:
             assert False, f"Unsupported number of layers: {self.layers}"
-        return self.linear_head(linear_input)
+        
+        x = self.linear_head(linear_input)
+        if self.stacked_layers == 2: x = F.relu(self.linear_head2(x))
+        
+        return x
