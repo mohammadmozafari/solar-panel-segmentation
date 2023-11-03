@@ -24,7 +24,7 @@ class TestDataset(Dataset):
             # x = self._transform_images(x)
             x = normalize(x, MEAN=self.MEAN, STD=self.STD)
             x = torch.from_numpy(x)
-            return self.n_img_dirs[idx], x.type(torch.float32), torch.tensor(0)
+            return self.n_img_dirs[idx], x.type(torch.float32), torch.tensor(0.0)
         else: # solar
             idx = idx % len(self.p_img_dirs)
             x = cv2.imread(self.p_img_dirs[idx])[:, :, ::-1]
