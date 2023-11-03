@@ -26,11 +26,15 @@ class UKDatasetFull:
                  data_folder: Path=Path('data'),
                  normalize: bool = True, 
                  transform_images: bool = False,
-                 mask: Optional[List[bool]] = None) -> None:
+                 mask: Optional[List[bool]] = None,
+                 p: float = 0.5,
+                 train_mode: bool = True) -> None:
 
         self.normalize = normalize
         self.transform_images = transform_images
         self.data_folder = data_folder
+        self.p = p
+        self.train_mode = train_mode
         
         self.all_paths = sorted(glob.glob(f'{data_folder}/*'))
         if mask is not None:
@@ -40,9 +44,7 @@ class UKDatasetFull:
         self.all_paths = [x for include, x in zip(mask, self.all_paths) if include]
         self.positive_paths = [x for x in self.all_paths if x.endswith('-P.tif')]
         self.negative_paths = [x for x in self.all_paths if x.endswith('-N.tif')]
-        
-        print(len(self.positive_paths))
-        print(len(self.negative_paths))
+        print(f'Positive: {len(self.positive_paths)} -- Negative: {len(self.negative_paths)}')
     
     def __len__(self) -> int:
         return len(self.all_paths)
@@ -85,13 +87,24 @@ class UKDatasetFull:
         return npy
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        path = self.all_paths[index]
+        
+        # if test mode
+        if not self.train_mode:
+            path = self.all_paths[index]
+        
+        # get solar
+        elif torch.rand((1,)) < self.p: 
+            path = self.positive_paths[torch.randint(0, len(self.positive_paths), (1,))]
+        
+        # get empty
+        else:
+            path = self.negative_paths[torch.randint(0, len(self.positive_paths), (1,))]
+        
         x = rasterio.open(path).read()
         y = torch.tensor(1.0).long() if path.endswith('-P.tif') else torch.tensor(0.0).long() 
         if self.transform_images: x = self._transform_images(x)
         if self.normalize: x = normalize(x, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
         return torch.as_tensor(x.copy()).float(), y
-
 
 class UKDataset:
 
