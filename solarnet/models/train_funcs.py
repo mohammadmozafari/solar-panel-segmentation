@@ -79,7 +79,7 @@ def train_classifier(model: torch.nn.Module,
                 running_losses = []
                 print(f'[{epoch}, {iteration}] -- Loss: {t_loss}')
                 writer.add_scalar('HighFreqLoss', t_loss, iteration)
-                lr_scheduler.step(t_loss)
+                # lr_scheduler.step(t_loss)
                 
             if (iteration + 1) % 200 == 0:
                 v_losses, v_true, v_pred = validate_on_sub_val(model, sub_val_dataloader, device)

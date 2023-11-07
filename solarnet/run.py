@@ -8,7 +8,7 @@ from tqdm import tqdm
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 
-from solarnet.config import UK_FULL_DATASET_PATH 
+from solarnet.config import UK_1M_DATASET_PATH 
 from solarnet.preprocessing import MaskMaker, ImageSplitter
 from solarnet.models import Classifier, Segmenter, train_classifier, train_segmenter, DinoClassifier
 from solarnet.datasets import (ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset,
@@ -63,6 +63,31 @@ class RunTask:
         splitter.process(imsize=imsize, empty_ratio=empty_ratio)
 
     @staticmethod
+    def extract_dino_features(data_folder='data', mode='small',
+                              device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),):
+        
+        model = DinoClassifier(mode=mode, layers=1, stacked_layers=2)
+        model = model.to(device)
+        dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), train_mode=False, transform_images=False)
+        dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
+        len_dataset = len(dataset)
+        
+        with torch.no_grad():
+            model.eval()
+            features = {}
+            for batch_num, (x, y, names) in enumerate(dataloader):
+                x = x.to(device)
+                y = y.to(device)
+                feats = model.get_dino_features(x)
+                for i in range(x.shape[0]):
+                    features[names[i]] = feats[i].cpu().numpy()
+                if batch_num % 200:
+                    np.save(f'./data/uk1m_dinov2_features/{batch_num}', features, allow_pickle=True)
+                    print(f'Processed until batch {batch_num}')
+                    features = {}
+        
+
+    @staticmethod
     def train_classifier(max_epochs=100, warmup=2, patience=5, val_size=0.1,
                          test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
                          device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
@@ -113,20 +138,21 @@ class RunTask:
         # dataset = UKDataset(data_folder=Path('./data/labeled_data_from_colab'), transform_images=False)
         # len_dataset = len(dataset)
 
-        dataset = UKDatasetFull(data_folder=Path(UK_FULL_DATASET_PATH), transform_images=False)
+        dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), transform_images=False)
         len_dataset = len(dataset)
 
         # make a train and val set
         train_mask, sub_val_mask, full_val_mask = make_masks(len_dataset, 0.005, 0.195)
+        # train_mask, sub_val_mask, full_val_mask = make_masks(len_dataset, 0.15, 0.05)
         dataset.add_mask(train_mask)
         
         train_dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
         
-        sub_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_FULL_DATASET_PATH), 
+        sub_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), 
                                                       mask=sub_val_mask, transform_images=False, train_mode=False),
                                                       batch_size=64, shuffle=True, num_workers=8)
         
-        full_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_FULL_DATASET_PATH),
+        full_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH),
                                                        mask=full_val_mask, transform_images=False, train_mode=False),
                                                        batch_size=64, shuffle=True, num_workers=8)
         

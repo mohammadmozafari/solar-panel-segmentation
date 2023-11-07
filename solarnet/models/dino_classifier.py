@@ -53,6 +53,33 @@ class DinoClassifier(nn.Module):
                 self.linear_head = nn.Linear((1 + layers) * 1536, 300)
                 self.linear_head2 = nn.Linear(300, 2)
 
+    def get_dino_features(self, x):
+        if self.layers == 1:
+            x = self.dinov2.forward_features(x)
+            cls_token = x["x_norm_clstoken"]
+            patch_tokens = x["x_norm_patchtokens"]
+            # fmt: off
+            linear_input = torch.cat([
+                cls_token,
+                patch_tokens.mean(dim=1),
+            ], dim=1)
+            # fmt: on
+        elif self.layers == 4:
+            x = self.dinov2.get_intermediate_layers(x, n=4, return_class_token=True)
+            # fmt: off
+            linear_input = torch.cat([
+                x[0][1],
+                x[1][1],
+                x[2][1],
+                x[3][1],
+                x[3][0].mean(dim=1),
+            ], dim=1)
+            # fmt: on
+        else:
+            assert False, f"Unsupported number of layers: {self.layers}" 
+        
+        return linear_input
+    
     def forward(self, x):
         
         if self.layers == 1:
@@ -80,6 +107,6 @@ class DinoClassifier(nn.Module):
             assert False, f"Unsupported number of layers: {self.layers}"
         
         x = self.linear_head(linear_input)
-        if self.stacked_layers == 2: x = F.relu(self.linear_head2(x))
+        if self.stacked_layers == 2: x = self.linear_head2(F.relu(x))
         
         return x

@@ -48,16 +48,6 @@ class UKDatasetFull:
     
     def __len__(self) -> int:
         return len(self.all_paths)
-
-    # def _transform_images(self, image: np.ndarray) -> np.ndarray:
-    #     transforms = [
-    #         no_change,
-    #         horizontal_flip,
-    #         vertical_flip,
-    #         colour_jitter,
-    #     ]
-    #     chosen_function = random.choice(transforms)
-    #     return chosen_function(image)
     
     def _transform_images(self, image: np.ndarray) -> np.ndarray:
         
@@ -75,15 +65,6 @@ class UKDatasetFull:
 
         npy = tens.numpy()
         
-        # fig, axes = plt.subplots(1, 2)
-        # axes[0].imshow(image.transpose((1, 2, 0)))
-        # axes[1].imshow(npy.transpose((1, 2, 0)))
-        # axes[0].axis('off')
-        # axes[1].axis('off')
-        # plt.savefig(f'tmp_plots/{self.counter}.png')
-        # plt.close()
-        # self.counter += 1
-        
         return npy
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -98,13 +79,14 @@ class UKDatasetFull:
         
         # get empty
         else:
-            path = self.negative_paths[torch.randint(0, len(self.positive_paths), (1,))]
+            path = self.negative_paths[torch.randint(0, len(self.negative_paths), (1,))]
         
+        current_file = path.split('/')[-1]
         x = rasterio.open(path).read()
         y = torch.tensor(1.0).long() if path.endswith('-P.tif') else torch.tensor(0.0).long() 
         if self.transform_images: x = self._transform_images(x)
         if self.normalize: x = normalize(x, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
-        return torch.as_tensor(x.copy()).float(), y
+        return torch.as_tensor(x.copy()).float(), y, current_file
 
 class UKDataset:
 
