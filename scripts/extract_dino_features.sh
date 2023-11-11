@@ -1,4 +1,4 @@
-EXP_NAME="feats_uk1M"
+EXP_NAME="feats_london"
 EXP_DIR="./exps/${EXP_NAME}"
 MODE='giant'
 TRAIN_MODE="freeze"

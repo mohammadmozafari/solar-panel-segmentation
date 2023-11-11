@@ -1,4 +1,4 @@
-EXP_NAME="dinov2_giant_freeze_2stacked_uk20k"
+EXP_NAME="dinov2_giant_freeze_mlp2_uk20k_v2"
 EXP_DIR="./exps/${EXP_NAME}"
 MODE='giant'
 TRAIN_MODE="freeze"

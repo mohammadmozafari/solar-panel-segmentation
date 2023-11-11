@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 
 import os
@@ -8,11 +9,16 @@ from tqdm import tqdm
 from pathlib import Path
 from torch.utils.tensorboard import SummaryWriter
 
-from solarnet.config import UK_1M_DATASET_PATH 
+from solarnet.datasets import TestDataset
 from solarnet.preprocessing import MaskMaker, ImageSplitter
 from solarnet.models import Classifier, Segmenter, train_classifier, train_segmenter, DinoClassifier
 from solarnet.datasets import (ClassifierRandomLocationDataset, ClassifierDataset, SegmenterDataset,
-                               make_masks, make_masks_torch, UKDataset, UKDatasetFull)
+                               make_masks, make_masks_torch, UKDataset, UKDatasetFull, UKFeatDataset, create_uk_feat_dataloaders)
+
+from solarnet.config import (UK_1M_DATASET_PATH,
+                             UK_20K_v2_DATASET_PATH,
+                             UK_1M_FEATS_PATH,
+                             LONDON_300_PATH)
 
 def init_exp(exp_dir):
     # instance directory
@@ -68,24 +74,54 @@ class RunTask:
         
         model = DinoClassifier(mode=mode, layers=1, stacked_layers=2)
         model = model.to(device)
-        dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), train_mode=False, transform_images=False)
-        dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
+        
+        # dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), train_mode=False, transform_images=False)
+        # dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
+        
+        dataset = TestDataset(LONDON_300_PATH, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
         len_dataset = len(dataset)
         
         with torch.no_grad():
             model.eval()
             features = {}
             for batch_num, (x, y, names) in enumerate(dataloader):
+                print(f'Processing batch {batch_num}')
                 x = x.to(device)
                 y = y.to(device)
                 feats = model.get_dino_features(x)
                 for i in range(x.shape[0]):
                     features[names[i]] = feats[i].cpu().numpy()
-                if batch_num % 200:
-                    np.save(f'./data/uk1m_dinov2_features/{batch_num}', features, allow_pickle=True)
-                    print(f'Processed until batch {batch_num}')
+                if ((batch_num + 1) % 200 == 0) or (batch_num + 1 == len(dataloader)):
+                    np.save(f'./data/temp/{batch_num}', features, allow_pickle=True)
+                    print(f'-------------- Saved in file ------------------')
                     features = {}
+
+# train_mlp1
+# train_mlp2   
+
+    @staticmethod
+    def train_mlp2(max_epochs=100, warmup=2, patience=5, val_size=0.1,
+                   test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
+                   device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                   exp_dir=None, exp_name=None):
         
+        instance_dir = init_exp(Path(exp_dir))
+        writer = SummaryWriter(f'runs/{exp_name}')
+        train_dl, val1_dl, val2_dl = create_uk_feat_dataloaders(UK_1M_FEATS_PATH, 10_000, 0.19, 0.01)
+        
+        model = nn.Sequential(
+            nn.Linear(3072, 300),
+            nn.ReLU(),
+            nn.Linear(300, 2)
+        )
+        model = model.to(device)
+        learning_rate = 1e-5
+    
+        train_classifier(model, train_dl, val1_dl, max_epochs=max_epochs,
+                         warmup=warmup, patience=patience, device=device,
+                         instance_dir=instance_dir, writer=writer, learning_rate=learning_rate, only_feats=True)
+ 
 
     @staticmethod
     def train_classifier(max_epochs=100, warmup=2, patience=5, val_size=0.1,
@@ -138,21 +174,21 @@ class RunTask:
         # dataset = UKDataset(data_folder=Path('./data/labeled_data_from_colab'), transform_images=False)
         # len_dataset = len(dataset)
 
-        dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), transform_images=False)
+        dataset = UKDatasetFull(data_folder=Path(UK_20K_v2_DATASET_PATH), transform_images=False)
         len_dataset = len(dataset)
 
         # make a train and val set
-        train_mask, sub_val_mask, full_val_mask = make_masks(len_dataset, 0.005, 0.195)
+        train_mask, sub_val_mask, full_val_mask = make_masks(len_dataset, 0.19, 0.01)
         # train_mask, sub_val_mask, full_val_mask = make_masks(len_dataset, 0.15, 0.05)
         dataset.add_mask(train_mask)
         
         train_dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
         
-        sub_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), 
+        sub_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_20K_v2_DATASET_PATH), 
                                                       mask=sub_val_mask, transform_images=False, train_mode=False),
                                                       batch_size=64, shuffle=True, num_workers=8)
         
-        full_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH),
+        full_val_dataloader = DataLoader(UKDatasetFull(data_folder=Path(UK_20K_v2_DATASET_PATH),
                                                        mask=full_val_mask, transform_images=False, train_mode=False),
                                                        batch_size=64, shuffle=True, num_workers=8)
         

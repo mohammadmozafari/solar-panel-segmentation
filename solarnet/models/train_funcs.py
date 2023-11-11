@@ -9,8 +9,11 @@ import matplotlib.pyplot as plt
 from solarnet.datasets import denormalize
 import cv2
 from typing import Any, List, Tuple
-from solarnet.datasets import TestDataset
 from solarnet.utils import report_validation_results
+from solarnet.datasets import TestDataset, London300Feats
+
+from solarnet.config import (LONDON_300_PATH,
+                             LONDON_300_FEATS_PATH)
 
 def train_classifier(model: torch.nn.Module,
                      train_dataloader: DataLoader,
@@ -21,7 +24,8 @@ def train_classifier(model: torch.nn.Module,
                      device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
                      instance_dir=None,
                      writer=None,
-                     learning_rate=1e-3) -> None:
+                     learning_rate=1e-3,
+                     only_feats=False) -> None:
     """Train the classifier
 
     Parameters
@@ -56,7 +60,7 @@ def train_classifier(model: torch.nn.Module,
         model.train()
         running_losses = []
     
-        for x, y in train_dataloader:
+        for x, y, _ in train_dataloader:
             
             x = x.to(device)
             y = y.to(device)
@@ -83,9 +87,19 @@ def train_classifier(model: torch.nn.Module,
                 
             if (iteration + 1) % 200 == 0:
                 v_losses, v_true, v_pred = validate_on_sub_val(model, sub_val_dataloader, device)
-                prec, rec, f1, acc = validate_on_london(model, device, 0.5, writer, iteration)
+                
+                if only_feats:
+                    prec, rec, f1, acc = validate_on_london_only_feats(model, device, 0.5, writer, iteration)
+                else:
+                    prec, rec, f1, acc = validate_on_london(model, device, 0.5, writer, iteration)
+                
                 best_threshold = report_validation_results(t_losses, t_true, t_pred, v_losses, v_true, v_pred, writer, iteration)
-                _ = validate_on_london(model, device, best_threshold, writer, iteration)
+                
+                if only_feats:
+                    _ = validate_on_london_only_feats(model, device, best_threshold, writer, iteration)
+                else:
+                    _ = validate_on_london(model, device, best_threshold, writer, iteration)
+                
                 t_losses, t_true, t_pred = [], [], []
                 
                 if f1 > best_f1:
@@ -179,18 +193,15 @@ def validate_on_london(model, device, thresh, writer, iteration):
 
     classifier = model
 
-    # When we have a group of 224x224 images            
-    save_path = Path('data/test_manually_labeled_output')
-    if not save_path.exists(): save_path.mkdir()
-    ds = TestDataset('data/test_manually_labeled_input', MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
+    ds = TestDataset(LONDON_300_PATH, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
     dl = DataLoader(ds, batch_size=1, shuffle=False)
     classifier.eval()
     tp, tn, fp, fn = 0, 0, 0, 0
     with torch.no_grad():
         for i, x in enumerate(dl):
-            names = x[0]
-            images = x[1].to(device)
-            label = x[2].to(device)
+            images = x[0].to(device)
+            label = x[1].to(device)
+            names = x[2]
             logit = classifier(images)
             pred = F.softmax(logit, -1)[:, 1]
             
@@ -205,9 +216,55 @@ def validate_on_london(model, device, thresh, writer, iteration):
             elif pred < 0.5 and label == 0: tn += 1
             else: raise Exception('Whatt ???')
             
-            img_name = save_path / f'{names[0].split("/")[-1].split(".")[0]}-{suffix}.png'
-            original_image = original_image[0, :, :, :].transpose((1, 2, 0))
+            # img_name = save_path / f'{names[0].split("/")[-1].split(".")[0]}-{suffix}.png'
+            # original_image = original_image[0, :, :, :].transpose((1, 2, 0))
             # cv2.imwrite(str(img_name), original_image[:, :, ::-1])
+
+        print(f'TP: {tp} - TN: {tn}, FP: {fp} - FN: {fn}')
+        
+        # Precision attempts to answer the following question:
+        # What proportion of positive identifications was actually correct?
+        precision = np.NAN if tp + fp == 0 else tp/(tp+fp)
+        print("Precision:", precision)
+
+        # Recall attempts to answer the following question:
+        # What proportion of actual positives was identified correctly?
+        recall = np.NAN if tp + fn == 0 else tp/(tp+fn)
+        print("Recall:", recall)
+
+        # F1-score: a combo of precision and recall
+        f1 = np.NAN if 2*tp + fp + fn == 0 else 2*tp/(2*tp + fp + fn)
+        print("F1-score:",f1)
+        
+        accuracy = np.NAN if tp+fp+tn+fn == 0 else (tp+tn)/(tp+fp+tn+fn)
+        print("Accuracy:",accuracy)
+        
+    writer.add_scalar('LondonTestSet/Precision', precision, iteration)
+    writer.add_scalar('LondonTestSet/Recall', recall, iteration)
+    writer.add_scalar('LondonTestSet/F1', f1, iteration)
+    writer.add_scalar('LondonTestSet/Accuracy', accuracy, iteration)
+    return precision, recall, f1, accuracy
+
+def validate_on_london_only_feats(model, device, thresh, writer, iteration):
+
+    classifier = model
+    ds = London300Feats(LONDON_300_FEATS_PATH)
+    dl = DataLoader(ds, batch_size=1, shuffle=False)
+    classifier.eval()
+    tp, tn, fp, fn = 0, 0, 0, 0
+    with torch.no_grad():
+        for i, x in enumerate(dl):
+            images = x[0].to(device)
+            label = x[1].to(device)
+            names = x[2]
+            logit = classifier(images)
+            pred = F.softmax(logit, -1)[:, 1]
+    
+            if pred >= 0.5 and label == 1: tp += 1
+            elif pred >= 0.5 and label == 0: fp += 1
+            elif pred < 0.5 and label == 1: fn += 1
+            elif pred < 0.5 and label == 0: tn += 1
+            else: raise Exception('Whatt ???')
 
         print(f'TP: {tp} - TN: {tn}, FP: {fp} - FN: {fn}')
         
@@ -241,7 +298,7 @@ def validate_on_sub_val(model, sub_val_dataloader, device):
     with torch.no_grad():
         model.eval()
         num = 1
-        for val_x, val_y in tqdm(sub_val_dataloader):
+        for val_x, val_y, _ in tqdm(sub_val_dataloader):
             val_x = val_x.to(device)
             val_y = val_y.to(device)
             
@@ -250,14 +307,6 @@ def validate_on_sub_val(model, sub_val_dataloader, device):
             v_losses.append(val_loss.item())
 
             val_preds = F.softmax(val_logits, -1)[:, 1]
-            for i in range(val_x.shape[0]):
-                
-                image = val_x[i, :, :, :].cpu()
-                image = denormalize(image.numpy())
-                img_name = f'tmp_plots/{num}_{int((val_preds[i].item() > 0.5) * 1)}_{int(val_y[i])}.png'
-                image = image.transpose((1, 2, 0))
-                cv2.imwrite(str(img_name), image[:, :, ::-1])
-                num += 1
 
             v_true.append(val_y.detach().cpu().numpy())
             v_pred.append(val_preds.detach().cpu().numpy())
