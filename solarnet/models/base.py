@@ -18,13 +18,13 @@ class ResnetBase(nn.Module):
         # resnet 34, 50, 101
         # resnet 100
         # base = resnet34(pretrained=imagenet_base).float()
-        # resnet = resnet50(pretrained=imagenet_base).float()
+        base = resnet50(pretrained=imagenet_base).float()
         # resnet = resnet101(pretrained=imagenet_base).float()
-        # self.pretrained = nn.Sequential(*list(base.children())[:-2])
+        self.pretrained = nn.Sequential(*list(base.children())[:-2])
         
         # vision transformers
-        base = swin_v2_t(pretrained=imagenet_base).float()
-        self.pretrained = nn.Sequential(*list(base.children())[:-3])
+        # base = swin_v2_t(pretrained=imagenet_base).float()
+        # self.pretrained = nn.Sequential(*list(base.children())[:-3])
 
     def forward(self, x):
         # Since this is just a base, forward() shouldn't directly

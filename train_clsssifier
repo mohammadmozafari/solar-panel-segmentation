@@ -1,0 +1,29 @@
+[1mNAME[0m
+    run.py
+
+[1mSYNOPSIS[0m
+    run.py [4mCOMMAND[0m
+
+[1mCOMMANDS[0m
+    [1m[4mCOMMAND[0m[0m is one of the following:
+
+     extract_dino_features
+
+     make_masks
+       Saves masks for each .tif image in the raw dataset. Masks are saved in  <org_folder>_mask/<org_filename>.npy where <org_folder> should be the city name, as defined in `data/README.md`.
+
+     split_images
+       Generates images (and their corresponding masks) of height = width = imsize for input into the models.
+
+     train_both
+       Train the classifier, and use it to train the segmentation model.
+
+     train_classifier
+       Train the classifier
+
+     train_mlp1
+
+     train_mlp2
+
+     train_segmenter
+       Train the segmentation model

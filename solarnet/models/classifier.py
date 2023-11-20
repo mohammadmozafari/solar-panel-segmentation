@@ -16,18 +16,17 @@ class Classifier(ResnetBase):
         super().__init__(imagenet_base=imagenet_base)
 
         # resnet34
-        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        # self.classifier = nn.Sequential(
-        #     nn.Linear(512, 1),
-        #     nn.Sigmoid()
-        # )
-        
-        # swin_v2_t
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
-            nn.Linear(768, 1),
-            nn.Sigmoid()
+            nn.Linear(512, 2),
         )
+        
+        # swin_v2_t
+        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(768, 1),
+        #     nn.Sigmoid()
+        # )
 
     def forward(self, x):
         x = self.pretrained(x)

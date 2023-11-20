@@ -50,7 +50,7 @@ def train_classifier(model: torch.nn.Module,
     
     lr = learning_rate
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, min_lr=1e-7)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, min_lr=1e-7, factor=0.5)
     
     iteration = 0
     best_f1 = 0
@@ -83,7 +83,7 @@ def train_classifier(model: torch.nn.Module,
                 running_losses = []
                 print(f'[{epoch}, {iteration}] -- Loss: {t_loss}')
                 writer.add_scalar('HighFreqLoss', t_loss, iteration)
-                # lr_scheduler.step(t_loss)
+                lr_scheduler.step(t_loss)
                 
             if (iteration + 1) % 200 == 0:
                 v_losses, v_true, v_pred = validate_on_sub_val(model, sub_val_dataloader, device)

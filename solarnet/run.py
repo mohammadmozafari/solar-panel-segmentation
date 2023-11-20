@@ -74,10 +74,9 @@ class RunTask:
         
         model = DinoClassifier(mode=mode, layers=1, stacked_layers=2)
         model = model.to(device)
-        
         # dataset = UKDatasetFull(data_folder=Path(UK_1M_DATASET_PATH), train_mode=False, transform_images=False)
         # dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
-        
+
         dataset = TestDataset(LONDON_300_PATH, MEAN=[0.5, 0.5, 0.5], STD=[0.5, 0.5, 0.5])
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
         len_dataset = len(dataset)
@@ -97,31 +96,75 @@ class RunTask:
                     print(f'-------------- Saved in file ------------------')
                     features = {}
 
-# train_mlp1
-# train_mlp2   
-
     @staticmethod
-    def train_mlp2(max_epochs=100, warmup=2, patience=5, val_size=0.1,
-                   test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
-                   device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
-                   exp_dir=None, exp_name=None):
+    def train_mlp1(max_epochs=100, warmup=2, patience=5, val_size=0.1,
+                    test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
+                    device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                    exp_dir=None, exp_name=None, lr=1e-5, per_class_sample_size=10_000):
         
         instance_dir = init_exp(Path(exp_dir))
-        writer = SummaryWriter(f'runs/{exp_name}')
-        train_dl, val1_dl, val2_dl = create_uk_feat_dataloaders(UK_1M_FEATS_PATH, 10_000, 0.19, 0.01)
+        writer = SummaryWriter(f'runs/{exp_name}_lr{lr}_1layer')
+        train_dl, val1_dl, val2_dl = create_uk_feat_dataloaders(UK_1M_FEATS_PATH, per_class_sample_size, 0.19, 0.01)
         
         model = nn.Sequential(
-            nn.Linear(3072, 300),
-            nn.ReLU(),
-            nn.Linear(300, 2)
+            nn.Linear(3072, 2),
         )
         model = model.to(device)
         learning_rate = 1e-5
-    
+
         train_classifier(model, train_dl, val1_dl, max_epochs=max_epochs,
-                         warmup=warmup, patience=patience, device=device,
-                         instance_dir=instance_dir, writer=writer, learning_rate=learning_rate, only_feats=True)
- 
+                            warmup=warmup, patience=patience, device=device,
+                            instance_dir=instance_dir, writer=writer, learning_rate=learning_rate, only_feats=True)
+
+    
+    @staticmethod
+    def train_mlp2(max_epochs=100, warmup=2, patience=5, val_size=0.1,
+                    test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
+                    device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                    exp_dir=None, exp_name=None,
+                    hidden_size=300, lr=1e-5, per_class_sample_size=10_000):
+        
+        instance_dir = init_exp(Path(exp_dir))
+        writer = SummaryWriter(f'runs/{exp_name}_lr{lr}_h{hidden_size}')
+        train_dl, val1_dl, val2_dl = create_uk_feat_dataloaders(UK_1M_FEATS_PATH, per_class_sample_size, 0.19, 0.01)
+        
+        model = nn.Sequential(
+            nn.Linear(3072, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, 2)
+        )
+        model = model.to(device)
+        learning_rate = 1e-5
+
+        train_classifier(model, train_dl, val1_dl, max_epochs=max_epochs,
+                            warmup=warmup, patience=patience, device=device,
+                            instance_dir=instance_dir, writer=writer, learning_rate=learning_rate, only_feats=True)
+
+    @staticmethod
+    def train_mlp3(max_epochs=100, warmup=2, patience=5, val_size=0.1,
+                    test_size=0.1, data_folder='data', mode='small', train_mode='freeze',
+                    device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                    exp_dir=None, exp_name=None,
+                    hidden_size1=1000, hidden_size2=500, lr=1e-5, per_class_sample_size=10_000):
+        
+        instance_dir = init_exp(Path(exp_dir))
+        writer = SummaryWriter(f'runs/{exp_name}_lr{lr}_h1{hidden_size1}_h2{hidden_size2}')
+        train_dl, val1_dl, val2_dl = create_uk_feat_dataloaders(UK_1M_FEATS_PATH, per_class_sample_size, 0.19, 0.01)
+        
+        model = nn.Sequential(
+            nn.Linear(3072, hidden_size1),
+            nn.ReLU(),
+            nn.Linear(hidden_size1, hidden_size2),
+            nn.ReLU(),
+            nn.Linear(hidden_size2, 2),
+        )
+        model = model.to(device)
+        learning_rate = 1e-5
+
+        train_classifier(model, train_dl, val1_dl, max_epochs=max_epochs,
+                            warmup=warmup, patience=patience, device=device,
+                            instance_dir=instance_dir, writer=writer, learning_rate=learning_rate, only_feats=True)
+
 
     @staticmethod
     def train_classifier(max_epochs=100, warmup=2, patience=5, val_size=0.1,
@@ -150,11 +193,14 @@ class RunTask:
             The device to train the models on
         """
         data_folder = Path(data_folder)
+        print(exp_dir)
         instance_dir = init_exp(Path(exp_dir))
         writer = SummaryWriter(f'runs/{exp_name}')
 
-        model = DinoClassifier(mode=mode, layers=1, stacked_layers=2)
-        
+        # model = DinoClassifier(mode=mode, layers=1, stacked_layers=2)
+
+        model = Classifier()
+
         if train_mode == 'freeze':
             learning_rate = 1e-5
             for name, p in model.named_parameters():
@@ -166,7 +212,7 @@ class RunTask:
             raise Exception(f'train mode "{train_mode}" not defined.')
 
         if device.type != 'cpu': model = model.cuda()
-        
+
         # processed_folder = data_folder / 'processed'
         # dataset = ClassifierRandomLocationDataset(transform_images=False)
         # len_dataset = len(dataset.city_name)
