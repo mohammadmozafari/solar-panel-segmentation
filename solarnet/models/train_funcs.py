@@ -109,7 +109,80 @@ def train_classifier(model: torch.nn.Module,
                     torch.save(model.state_dict(), savedir / f'it{iteration}.model')
             
             iteration += 1
-        
+
+def train_classifier_single_output(model: torch.nn.Module,
+                                   train_dataloader: DataLoader,
+                                   sub_val_dataloader: DataLoader,
+                                   warmup: int = 2,
+                                   patience: int = 5,
+                                   max_epochs: int = 100,
+                                   device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'),
+                                   instance_dir=None,
+                                   writer=None,
+                                   learning_rate=1e-3,
+                                   only_feats=False) -> None:
+    
+    lr = learning_rate
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True, min_lr=1e-7, factor=0.5)
+    
+    iteration = 0
+    best_f1 = 0
+    t_losses, t_true, t_pred = [], [], []
+    for epoch in range(max_epochs):
+
+        model.train()
+        running_losses = []
+    
+        for x, y, _ in train_dataloader:
+            
+            x = x.to(device)
+            y = y.to(device)
+            
+            optimizer.zero_grad()        
+            pos_prob = model(x)
+
+            pred = pos_prob[:, 0]
+            loss = F.binary_cross_entropy(pred, y.float())
+            loss.backward()
+            optimizer.step()
+            t_losses.append(loss.item())
+            running_losses.append(loss.item())
+            
+            t_true.append(y.detach().cpu().numpy())
+            t_pred.append(pred.detach().cpu().numpy())
+            
+            if (iteration + 1) % 10 == 0:
+                t_loss = sum(running_losses) / len(running_losses)
+                running_losses = []
+                print(f'[{epoch}, {iteration}] -- Loss: {t_loss}')
+                writer.add_scalar('HighFreqLoss', t_loss, iteration)
+                lr_scheduler.step(t_loss)
+                
+            if (iteration + 1) % 200 == 0:
+                v_losses, v_true, v_pred = validate_on_sub_val(model, sub_val_dataloader, device)
+                
+                if only_feats:
+                    prec, rec, f1, acc = validate_on_london_only_feats(model, device, 0.5, writer, iteration)
+                else:
+                    prec, rec, f1, acc = validate_on_london(model, device, 0.5, writer, iteration)
+                
+                best_threshold = report_validation_results(t_losses, t_true, t_pred, v_losses, v_true, v_pred, writer, iteration)
+                
+                if only_feats:
+                    _ = validate_on_london_only_feats(model, device, best_threshold, writer, iteration)
+                else:
+                    _ = validate_on_london(model, device, best_threshold, writer, iteration)
+                
+                t_losses, t_true, t_pred = [], [], []
+                
+                if f1 > best_f1:
+                    best_f1 = f1
+                    savedir = instance_dir / 'checkpoints'
+                    if not savedir.exists(): savedir.mkdir()
+                    torch.save(model.state_dict(), savedir / f'it{iteration}.model')
+            
+            iteration += 1
 
 def train_segmenter(model: torch.nn.Module,
                     train_dataloader: DataLoader,
